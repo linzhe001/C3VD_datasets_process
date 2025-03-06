@@ -1,10 +1,13 @@
 #! /usr/bin/bash
 
+# 数据文件夹的绝对路径（用户可以根据需要修改）
+DATA_ROOT="/home/linzhe_linux/C3VD_datasets_process"
+
 # 设置当前工作目录的相对路径
 # 请根据您的实际文件结构调整这些路径
-INPUT_PATH="./C3VD/cecum_t1_a/pose.txt"  # 相对于当前目录的输入位姿文件
-PCD_DIR="./C3VD_ply/cecum_t1_a"          # 相对于当前目录的点云文件夹
-OUTPUT_PATH="./fused_all_C3VD/cecum_t1_a" # 相对于当前目录的输出文件夹
+INPUT_PATH="$DATA_ROOT/C3VD/cecum_t1_a/pose.txt"  # 相对于当前目录的输入位姿文件
+PCD_DIR="$DATA_ROOT/C3VD_ply/cecum_t1_a"          # 相对于当前目录的点云文件夹
+OUTPUT_PATH="$DATA_ROOT/fused_all_C3VD/cecum_t1_a" # 相对于当前目录的输出文件夹
 OUTPUT_FILE="cecum_t1_a_merged_all.ply"   # 输出文件名
 
 # 创建输出目录（如果不存在）
