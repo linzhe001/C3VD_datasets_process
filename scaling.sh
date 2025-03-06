@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# 直接在脚本中设置参数
+REF_MODEL_PATH="./C3VD/cecum_t1_a/coverage_mesh.obj"  # 参考模型路径
+FOLDER_PATH="./fused_C3VD_new"  # 要处理的点云文件夹路径
+
+# 运行Python脚本
+python3 scaling.py \
+    --ref_model "$REF_MODEL_PATH" \
+    --folder "$FOLDER_PATH"
+
+echo "处理完成!" 
