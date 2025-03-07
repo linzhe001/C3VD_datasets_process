@@ -13,8 +13,8 @@ mkdir -p "$OUTPUT_PATH"
 # 运行点云生成脚本
 python3 creat_check_pcd.py --input "$INPUT_PATH" \
                            --output "$OUTPUT_PATH" \
-                           --voxel_size 0.005 \
-                           --max_points 30000
+                           --voxel_size 0.5 \
+                           --max_points 50000
 
 echo "深度图到点云转换任务已完成！"
 #EOF

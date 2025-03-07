@@ -5,7 +5,7 @@ import os
 import argparse
 import gc
 
-def depth_image_to_point_cloud(depth_image_path, fx, fy, cx, cy, k1, k2, k3, k4, scale_factor=0.001, voxel_size=None, down_sample_interval=1000):
+def depth_image_to_point_cloud(depth_image_path, fx, fy, cx, cy, k1, k2, k3, k4, scale_factor=0.001, voxel_size=None, batch_size=10, max_points=30000):
     # 读取深度图
     depth_image = cv2.imread(depth_image_path, cv2.IMREAD_ANYDEPTH)
     
@@ -35,72 +35,104 @@ def depth_image_to_point_cloud(depth_image_path, fx, fy, cx, cy, k1, k2, k3, k4,
         undistorted_depth = depth_image
         del depth_image
     
-    # 如果启用实时体素下采样
-    if voxel_size is not None and voxel_size > 0 and down_sample_interval > 0:
-        point_cloud = []  # 存储所有点
+    # 检查是否需要进行体素下采样
+    if voxel_size is not None and voxel_size > 0 and batch_size > 0:
         valid_depth_count = 0
-        down_sample_count = 0  # 记录添加了多少点后需要进行下采样
+        total_points_processed = 0
         
-        # 使用稀疏采样减少点数，默认使用5像素间隔
-        sample_step = 5
+        # 临时点云和结果点云
+        temp_points = []  # 存储临时点云，达到batch_size后会进行下采样
+        final_points = []  # 存储所有下采样后的点云
         
-        # 用于进度显示
-        total_processed = 0
-        last_report = 0
-        
-        for v in range(0, height, sample_step):
-            for u in range(0, width, sample_step):
+        # 处理所有像素点
+        for v in range(height):
+            for u in range(width):
                 depth_value = undistorted_depth[v, u]
                 if depth_value > 0:  # 只处理有效深度值
                     valid_depth_count += 1
                     Z = depth_value * scale_factor
                     X = (u - cx) / fx * Z
                     Y = (v - cy) / fy * Z
-                    point_cloud.append([X, Y, Z])
+                    temp_points.append([X, Y, Z])
                     
-                    down_sample_count += 1
-                    total_processed += 1
-                    
-                    # 每积累down_sample_interval个点就进行一次整体下采样
-                    if down_sample_count >= down_sample_interval:
-                        # 进行体素下采样
-                        point_array = np.array(point_cloud)
+                    # 每收集 batch_size 个点就进行一次下采样
+                    if len(temp_points) >= batch_size:
+                        total_points_processed += len(temp_points)
                         
-                        # 创建Open3D点云对象进行下采样
-                        pcd = o3d.geometry.PointCloud()
-                        pcd.points = o3d.utility.Vector3dVector(point_array)
-                        downsampled_pcd = pcd.voxel_down_sample(voxel_size)
+                        # 将临时点云添加到最终点云
+                        final_points.extend(temp_points)
                         
-                        # 将下采样结果转回Python列表
-                        point_cloud = np.asarray(downsampled_pcd.points).tolist()
+                        # 固定体素大小，不进行动态调整
+                        current_voxel_size = voxel_size
                         
-                        # 报告进度和下采样效果
-                        if total_processed - last_report > 100000:
-                            print(f"已处理 {total_processed} 个点，下采样后点数: {len(point_cloud)}")
-                            last_report = total_processed
+                        # 对整个点云进行体素下采样
+                        if len(final_points) > 0:
+                            final_np = np.array(final_points)
+                            voxel_dict = {}
+                            
+                            for point in final_np:
+                                # 计算体素索引（始终使用固定的 voxel_size）
+                                voxel_x = int(np.floor(point[0] / current_voxel_size))
+                                voxel_y = int(np.floor(point[1] / current_voxel_size))
+                                voxel_z = int(np.floor(point[2] / current_voxel_size))
+                                voxel_idx = (voxel_x, voxel_y, voxel_z)
+                                
+                                if voxel_idx in voxel_dict:
+                                    voxel_dict[voxel_idx][0] += point[0]
+                                    voxel_dict[voxel_idx][1] += point[1]
+                                    voxel_dict[voxel_idx][2] += point[2]
+                                    voxel_dict[voxel_idx][3] += 1
+                                else:
+                                    voxel_dict[voxel_idx] = [point[0], point[1], point[2], 1]
+                            
+                            # 重置最终点云并添加下采样结果
+                            final_points = []
+                            for voxel, (x_sum, y_sum, z_sum, count) in voxel_dict.items():
+                                final_points.append([x_sum/count, y_sum/count, z_sum/count])
                         
-                        # 重置计数器
-                        down_sample_count = 0
+                        # 清空临时点云列表
+                        temp_points = []
+                        
+                        if total_points_processed % 100000 == 0:
+                            print(f"已处理 {total_points_processed} 个点，当前点云大小: {len(final_points)}")
         
-        # 最后再进行一次下采样确保最终结果是下采样过的
-        if len(point_cloud) > 0:
-            point_array = np.array(point_cloud)
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(point_array)
-            downsampled_pcd = pcd.voxel_down_sample(voxel_size)
-            point_cloud = np.asarray(downsampled_pcd.points)
-        else:
-            point_cloud = np.array([[0, 0, 0]])
+        # 处理剩余的点
+        if len(temp_points) > 0:
+            # 将临时点云转换为NumPy数组
+            temp_np = np.array(temp_points)
+            
+            # 对临时点云进行体素下采样
+            voxel_dict = {}
+            for point in temp_np:
+                # 计算体素索引
+                voxel_x = int(np.floor(point[0] / voxel_size))
+                voxel_y = int(np.floor(point[1] / voxel_size))
+                voxel_z = int(np.floor(point[2] / voxel_size))
+                voxel_idx = (voxel_x, voxel_y, voxel_z)
+                
+                # 更新体素字典
+                if voxel_idx in voxel_dict:
+                    voxel_dict[voxel_idx][0] += point[0]
+                    voxel_dict[voxel_idx][1] += point[1]
+                    voxel_dict[voxel_idx][2] += point[2]
+                    voxel_dict[voxel_idx][3] += 1
+                else:
+                    voxel_dict[voxel_idx] = [point[0], point[1], point[2], 1]
+            
+            # 将体素下采样结果添加到最终点云
+            for voxel, (x_sum, y_sum, z_sum, count) in voxel_dict.items():
+                final_points.append([x_sum/count, y_sum/count, z_sum/count])
         
         print(f"总有效深度像素数: {valid_depth_count}")
+        print(f"最终点云包含 {len(final_points)} 个点")
+        point_cloud = np.array(final_points) if final_points else np.array([[0, 0, 0]])
     else:
-        # 不进行体素下采样的原始逻辑
+        # 原始逻辑：不进行实时下采样，但我们仍然去掉sample_step，处理所有点
         point_cloud = []
         valid_depth_count = 0
-        sample_step = 5  # 使用稀疏采样减少点数
         
-        for v in range(0, height, sample_step):
-            for u in range(0, width, sample_step):
+        for v in range(height):
+            for u in range(width):
                 depth_value = undistorted_depth[v, u]
                 if depth_value > 0:  # 只过滤深度为0的点
                     valid_depth_count += 1
@@ -121,7 +153,7 @@ def depth_image_to_point_cloud(depth_image_path, fx, fy, cx, cy, k1, k2, k3, k4,
     # 释放校正后的深度图内存
     del undistorted_depth
     
-    print(f"最终点云包含 {len(point_cloud)} 个点")
+    print(f"生成点云包含 {len(point_cloud)} 个点")
     return point_cloud
 
 def compute_range(point_cloud):
@@ -179,10 +211,10 @@ def main():
                     depth_image_path = os.path.join(root, file)
                     print(depth_image_path)
     
-                    # 1) 生成点云数据，每积累1000个点对整体进行一次下采样
+                    # 1) 生成点云数据，每batch_size个点进行一次下采样
                     point_cloud = depth_image_to_point_cloud(
                         depth_image_path, fx, fy, cx, cy, k1, k2, k3, k4, 
-                        scale_factor=0.001, voxel_size=VOXEL_SIZE, down_sample_interval=1000
+                        scale_factor=0.001, voxel_size=VOXEL_SIZE, batch_size=1000, max_points=MAX_POINTS
                     )
     
                     # 2) 计算点云范围，仅供调试参考
