@@ -92,23 +92,25 @@ class OmnidirectionalCamera:
 def read_config(config_path):
     """读取配置文件"""
     # 检查文件扩展名
-        # 原来的INI格式处理
-    config = configparser.ConfigParser()
-    config.read(config_path)
+    with open(config_path, 'r') as f:
+        values = f.readline().strip().split()
+        
+    if len(values) < 11:
+        raise ValueError(f"参数文件格式错误，期望至少11个参数，实际获得{len(values)}个")
+        
+    width = int(values[0])      # Width
+    height = int(values[1])     # height
+    cx = float(values[2])       # cx
+    cy = float(values[3])       # cy
+    a0 = float(values[4])       # a0
+    a2 = float(values[5])       # a2
+    a3 = float(values[6])       # a3
+    a4 = float(values[7])       # a4
+    e = float(values[8])        # e
+    c = float(values[9])        # f 对应代码中的c参数
+    d = float(values[10])       # g 对应代码中的d参数
     
-    width = int(config['Camera']['width'])
-    height = int(config['Camera']['height'])
-    cx = float(config['Camera']['cx'])
-    cy = float(config['Camera']['cy'])
-    a0 = float(config['Camera']['a0'])
-    a1 = float(config['Camera']['a1'])  # 注意：a1在代码中未使用
-    a2 = float(config['Camera']['a2'])
-    a3 = float(config['Camera']['a3'])
-    a4 = float(config['Camera']['a4'])
-    c = float(config['Camera']['c'])
-    d = float(config['Camera']['d'])
-    e = float(config['Camera']['e'])
-    
+    print(f"从文本文件加载相机参数: {config_path}")
     return OmnidirectionalCamera(width, height, cx, cy, a0, a2, a3, a4, c, d, e)
 
 def read_pose_file(pose_path, frame_idx=0):

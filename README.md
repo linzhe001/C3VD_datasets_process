@@ -7,7 +7,7 @@ Please build the datasets folder, and change ``DATA_ROOT`` to your folder path i
 │   ├── C3VD_ply
 │   └── fused_all_C3VD
 ```
-### C3VD
+### C3VD (only folder need prepared before)
 Used to store the original dataset: depth maps, 3D models, pose files
 ```
 ├── C3VD
