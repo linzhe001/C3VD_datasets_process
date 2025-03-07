@@ -27,11 +27,11 @@
 
 ## 流程
 
-1. 先用运行``creat_check_pcd.sh``使用深度图生成点云（可以省略，直接使用已有的前十帧点云进行后续的测试）
+1. 先用运行``creat_check_pcd.sh``使用深度图生成点云
 
-2. 运行``create_merge_all.sh``生成多帧合成的点云储存在fused_all_C3VD文件夹中
+2. 运行``create_merge_all.sh``生成多帧合成的点云储存在``fused_all_C3VD``文件夹中
 
-3. 运行``scaling.sh``来对fused_all_C3VD按照3D模型的大小进行缩放。
+3. 运行``scaling.sh``来对``fused_all_C3VD``按照3D模型的大小进行缩放。
 
 以上就是我生成合成点云的全部过程，从第二步始我就没有在本地的电脑测试过，只在集群上使用过。
 
