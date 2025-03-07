@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 数据文件夹的绝对路径（用户可以根据需要修改）
-DATA_ROOT="/home/linzhe_linux/C3VD_datasets_process"
+DATA_ROOT="/home/linzhe_linux/C3VD_datasets"
 
 # 直接在脚本中设置参数
 REF_MODEL_PATH="$DATA_ROOT/C3VD/cecum_t1_a/coverage_mesh.obj"  # 参考模型路径

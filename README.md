@@ -1,6 +1,12 @@
 # C3VD_datasets_process
 ## Introduction to Different Folders
-
+Please build the datasets folder, and change ``DATA_ROOT`` to your folder path in each bash file. The sturcture of datasets folder is as follow:
+```
+├── C3VD_datasets
+│   ├── C3VD
+│   ├── C3VD_ply
+│   └── fused_all_C3VD
+```
 ### C3VD
 Used to store the original dataset: depth maps, 3D models, pose files
 ```
@@ -39,4 +45,7 @@ The above is my complete process for generating synthesized point clouds. From s
 
 ### ``Omni_pcd.py``
 This Python file uses an omnidirectional camera approach to generate point clouds using depth maps, but the provided ``camera_intrinsics`` is just a sample and is not correct.
+
+### ``create_merge.py``
+This python file used to merge different numbers of frames instead of all frames.
 

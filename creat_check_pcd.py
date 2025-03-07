@@ -83,10 +83,10 @@ k3 = 0.030524814153620117
 k4 = -0.012756926010904904
 
 # 根文件夹路径（请替换为实际路径）
-root_folder = "./C3VD"
+root_folder = "/home/linzhe_linux/C3VD_datasets/C3VD"
 
 # 最终保存 ply 文件的根文件夹路径
-output_folder = "./C3VD_ply"
+output_folder = "/home/linzhe_linux/C3VD_datasets/C3VD_ply"
 os.makedirs(output_folder, exist_ok=True)
 
 # 设置点云降采样的体素大小（可根据实际情况调整）

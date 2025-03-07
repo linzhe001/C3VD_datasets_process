@@ -1,7 +1,7 @@
 #! /usr/bin/bash
 
 # 数据文件夹的绝对路径（用户可以根据需要修改）
-DATA_ROOT="/home/linzhe_linux/C3VD_datasets_process"
+DATA_ROOT="/home/linzhe_linux/C3VD_datasets"
 
 # 直接在脚本中设置参数
 POSE_ROOT="$DATA_ROOT/C3VD"               # pose数据集根目录：每个场景文件夹下包含 pose.txt
