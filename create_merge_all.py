@@ -6,6 +6,7 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import argparse
 import copy  # 新增导入
+import re
 
 # ================== 工具函数 ==================
 def load_poses(pose_path):
@@ -371,9 +372,14 @@ def merge_all_point_clouds(pose_path, pcd_dir, output_path, voxel_size=0.05):
             print(f"警告: 文件 {pcd_path} 无法加载有效点云，跳过")
             continue
         
-        # 从文件名中提取帧索引
+        # 从文件名中提取帧索引，使用正则表达式以提高鲁棒性
         filename = os.path.basename(pcd_path)
-        frame_idx = int(filename.split('_')[1])
+        match = re.search(r'(\d+)', filename)
+        if match:
+            frame_idx = int(match.group(1))
+        else:
+            print(f"警告：无法从文件名 {filename} 中提取帧索引，跳过此文件")
+            continue
         
         # 确保帧索引在位姿数组范围内
         if frame_idx < len(poses):
@@ -392,15 +398,7 @@ def merge_all_point_clouds(pose_path, pcd_dir, output_path, voxel_size=0.05):
     
     # 最终下采样合并后的点云
     print(f"执行最终下采样 (当前点数: {len(combined_pcd.points)})...")
-    
-    # 进行体素下采样
-    try:
-        combined_pcd = combined_pcd.voxel_down_sample(voxel_size)
-    except MemoryError:
-        print("警告: 内存不足，尝试使用更大的体素尺寸...")
-        larger_voxel = voxel_size * 1.5
-        combined_pcd = combined_pcd.voxel_down_sample(larger_voxel)
-        print(f"使用更大的体素尺寸 ({larger_voxel}) 完成下采样")
+    combined_pcd = combined_pcd.voxel_down_sample(voxel_size)
     
     # 保存合并后的点云
     print(f"保存合成点云到: {output_path}")
@@ -419,15 +417,19 @@ def load_point_clouds(pcd_dir, num_frames, scene_name):
     """
     all_pcds = []
     pcd_files = []
-    
+
     for file in sorted(os.listdir(pcd_dir)):
         if "_depth_pcd.ply" in file:
             pcd_path = os.path.join(pcd_dir, file)
             pcd_files.append(pcd_path)
-    
+
+    # 限制加载帧的数量，仅保留前 num_frames 个文件
+    if num_frames is not None:
+        pcd_files = pcd_files[:num_frames]
+
     if not pcd_files:
         raise ValueError(f"在目录 {pcd_dir} 中未找到任何包含 '_depth_pcd.ply' 的点云文件")
-    
+
     for pcd_path in tqdm(pcd_files, desc="加载点云"):
         if not os.path.exists(pcd_path):
             print(f"警告: 场景 {scene_name} 中文件 {pcd_path} 不存在，添加空点云占位")
@@ -437,7 +439,7 @@ def load_point_clouds(pcd_dir, num_frames, scene_name):
         if not pcd.has_points():
             print(f"警告: 文件 {pcd_path} 无法加载有效点云")
         all_pcds.append(pcd)
-    
+
     return all_pcds
 
 # ================== 主流程入口 ==================

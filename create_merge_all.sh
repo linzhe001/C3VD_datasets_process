@@ -1,7 +1,7 @@
 #! /usr/bin/bash
 
 # 数据文件夹的绝对路径（用户可以根据需要修改）
-DATA_ROOT="/home/linzhe_linux/C3VD_datasets"
+DATA_ROOT="/mnt/c/Users/asus/Downloads/C3VD_datasets"
 
 # 设置当前工作目录的相对路径
 # 请根据您的实际文件结构调整这些路径
@@ -18,7 +18,7 @@ python create_merge_all.py --mode merge \
   --pose_path "$INPUT_PATH" \
   --pcd_dir "$PCD_DIR" \
   --output_path "$OUTPUT_PATH/$OUTPUT_FILE" \
-  --voxel_size 0.1  # 增加体素大小以减少内存需求
+  --voxel_size 0.5  # 增加体素大小以减少内存需求
 
 echo "点云合并任务已完成！"
 #EOF    
