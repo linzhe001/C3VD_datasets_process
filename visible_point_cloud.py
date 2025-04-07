@@ -103,14 +103,14 @@ def visualize_cameras_and_model(mesh, poses, output_path):
     
     return vis_geometries
 
-def process_scene(scene_path, output_root, intrinsic_params, distortion_params, depth_scale=0.001, depth_threshold=0.1):
+def process_scene_with_depth_guided_raycasting(scene_path, point_cloud_scene_dir, output_root):
     """
-    处理单个场景文件夹：加载 mesh、pose.txt 及所有深度图，并生成每帧的可见点云
+    使用深度图重建点云指导射线追踪判断可见性
     """
     scene_name = os.path.basename(os.path.normpath(scene_path))
     print(f"正在处理场景: {scene_name}")
     
-    # 查找 mesh 文件（假设后缀为 .obj）
+    # 1. 加载mesh
     mesh_files = [f for f in os.listdir(scene_path) if f.endswith(".obj")]
     if not mesh_files:
         print(f"场景 {scene_name} 未找到 mesh 文件，跳过。")
@@ -119,176 +119,183 @@ def process_scene(scene_path, output_root, intrinsic_params, distortion_params, 
     mesh = o3d.io.read_triangle_mesh(mesh_file_path)
     mesh.compute_vertex_normals()
     
-    # 从 mesh 上均匀采样候选点（方法 B）
-    pcd_mesh = mesh.sample_points_uniformly(number_of_points=100000)
-    world_points = np.asarray(pcd_mesh.points)
-    
-    # 读取 pose.txt 文件
+    # 2. 读取位姿数据
     pose_file = os.path.join(scene_path, "pose.txt")
     if not os.path.exists(pose_file):
         print(f"场景 {scene_name} 未找到 pose.txt，跳过。")
         return
-        
-    # 正确读取逗号分隔的位姿数据
+    
     poses_raw = np.loadtxt(pose_file, delimiter=",")
-    if poses_raw.ndim == 1 and poses_raw.size == 16:
-        pose_raw_matrix = poses_raw.reshape((4,4))
-        # 重新格式化为标准的变换矩阵
+    poses = []
+    for i in range(poses_raw.shape[0]):
+        pose_raw_matrix = poses_raw[i].reshape((4,4))
         standard_pose = np.eye(4)
-        standard_pose[:3, :3] = pose_raw_matrix[:3, :3]  # 复制旋转部分
-        standard_pose[:3, 3] = pose_raw_matrix[3, :3]    # 平移向量从最后一行移到最后一列
-        poses = [standard_pose]
-    elif poses_raw.ndim == 2 and poses_raw.shape[1] == 16:
-        poses = []
-        for i in range(poses_raw.shape[0]):
-            pose_raw_matrix = poses_raw[i].reshape((4,4))
-            # 重新格式化为标准的变换矩阵
-            standard_pose = np.eye(4)
-            standard_pose[:3, :3] = pose_raw_matrix[:3, :3]  # 复制旋转部分
-            standard_pose[:3, 3] = pose_raw_matrix[3, :3]    # 平移向量从最后一行移到最后一列
-            poses.append(standard_pose)
-    else:
-        print(f"场景 {scene_name} pose.txt 格式不符合预期，跳过。")
-        return
+        standard_pose[:3, :3] = pose_raw_matrix[:3, :3]
+        standard_pose[:3, 3] = pose_raw_matrix[3, :3]
+        poses.append(standard_pose)
     
-    # 查找所有的深度图文件（假设命名模式 *_depth.tiff）
-    depth_files = sorted(glob(os.path.join(scene_path, "*_depth.tiff")))
-    if len(depth_files) == 0:
-        print(f"场景 {scene_name} 未找到深度图文件，跳过。")
-        return
-    
-    num_frames = min(len(depth_files), len(poses))
-    print(f"场景 {scene_name} 共找到 {num_frames} 帧深度图与对应 pose。")
-    
-    # 创建输出目录：output_root/scene_name/
+    # 3. 创建输出目录
     scene_output_dir = os.path.join(output_root, scene_name)
     os.makedirs(scene_output_dir, exist_ok=True)
     
-    # 构造内参矩阵和畸变系数数组
-    fx, fy, cx, cy = intrinsic_params
-    K = np.array([[fx, 0, cx],
-                  [0, fy, cy],
-                  [0,  0,  1]])
-    k1, k2, k3, k4 = distortion_params
-    D = np.array([k1, k2, k3, k4])
-    
-    # 固定深度比例因子为0.001（毫米转米）
-    depth_scale = 0.001
-    print(f"使用固定深度比例: {depth_scale}（毫米转米）")
-    
-    for i in range(num_frames):  # 处理所有帧
-        depth_path = depth_files[i]
-        print(f"  处理帧 {i}: {os.path.basename(depth_path)}")
-        # 加载深度图
-        depth_img = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
-        if depth_img is None:
-            print(f"    无法读取深度图 {depth_path}，跳过此帧。")
+    # 4. 处理每一帧
+    for i in range(len(poses)):
+        print(f"  处理帧 {i}")
+        
+        # 4.1 加载重建点云
+        reconstructed_pcd_path = os.path.join(point_cloud_scene_dir, f"{i:04d}_depth_pcd.ply")
+        if not os.path.exists(reconstructed_pcd_path):
+            print(f"    找不到重建点云: {reconstructed_pcd_path}")
+            continue
+            
+        reconstructed_pcd = o3d.io.read_point_cloud(reconstructed_pcd_path)
+        if not reconstructed_pcd.has_points():
+            print(f"    重建点云为空: {reconstructed_pcd_path}")
             continue
         
-        height, width = depth_img.shape
+        # 4.2 计算相机位姿
+        camera_pose = np.linalg.inv(poses[i])
+        camera_position = poses[i][:3, 3]
         
-        # 执行去畸变处理
-        map1, map2 = cv2.fisheye.initUndistortRectifyMap(
-            K, D, np.eye(3), K, (width, height), cv2.CV_32FC1
-        )
-        undistorted_depth = cv2.remap(depth_img, map1, map2, cv2.INTER_LINEAR)
-        
-        # 读取第 i 帧对应的 pose
-        frame_pose = poses[i]
-        
-        # 正确获取相机位置 - 位姿矩阵的最后一列前三行是平移向量
-        camera_position = frame_pose[:3, 3]  # 从最后一列读取平移向量
-        
-        # 修改：不翻转Z轴，因为点Z值已经为正，这表明相机坐标系中Z轴指向相机前方
-        camera_pose = np.linalg.inv(frame_pose)  # 取逆获得从世界到相机的变换
-        
-        # 检查是否有NaN值
-        if np.isnan(camera_pose).any() or np.isnan(frame_pose).any():
-            print("警告: 位姿矩阵中包含NaN值!")
-            continue
-        
-        # 检查矩阵值范围
-        if np.max(np.abs(frame_pose)) > 1000 or np.max(np.abs(camera_pose)) > 1000:
-            print("警告: 位姿矩阵中包含异常大的值!")
-        
-        # 投影模型采样点到图像平面
-        pixel_coords, visibility, depths = project_points_to_image_all(
-            world_points, camera_pose, K, width, height
+        # 4.3 使用深度图重建点云确定观察方向和范围
+        view_direction, view_range = determine_view_from_depth_pcd(
+            reconstructed_pcd, camera_position
         )
         
-        # 直接保存所有投影到图像范围内的点，不做任何额外过滤
-        initial_visible_points = world_points[visibility == 1]
-        if len(initial_visible_points) > 0:
-            pcd_visible = o3d.geometry.PointCloud()
-            pcd_visible.points = o3d.utility.Vector3dVector(initial_visible_points)
-            output_filename = os.path.join(scene_output_dir, f"frame_{i:04d}_projection_only.ply")
-            o3d.io.write_point_cloud(output_filename, pcd_visible)
-            print(f"    保存投影点云 ({len(initial_visible_points)}点): {output_filename}")
-        else:
-            print("    警告: 投影后无可见点!")
+        # 4.4 从mesh采样点，但只采样在视野范围内的点
+        pcd_mesh = mesh.sample_points_uniformly(number_of_points=50000)
+        world_points = np.asarray(pcd_mesh.points)
         
-        # 如果经过 project_points_to_image_all 函数后，可见点数量已经为0，则直接跳过后续处理
-        visible_count = np.sum(visibility)
-        if visible_count == 0:
-            print("    警告: 投影后无可见点，跳过射线检测")
-            # 创建一个空点云并保存
+        # 4.5 基于观察方向进行初步筛选
+        initial_visibility = filter_points_by_view_direction(
+            world_points, camera_position, view_direction, view_range
+        )
+        
+        # 4.6 对初步筛选的点进行射线追踪
+        final_visibility = raycast_with_view_guidance(
+            world_points, camera_position, mesh, initial_visibility,
+            view_direction, view_range
+        )
+        
+        # 4.7 生成最终可见点云
+        visible_points = world_points[final_visibility == 1]
+        if len(visible_points) > 0:
             pcd_visible = o3d.geometry.PointCloud()
+            pcd_visible.points = o3d.utility.Vector3dVector(visible_points)
+            
+            # 4.8 保存结果
             output_filename = os.path.join(scene_output_dir, f"frame_{i:04d}_visible.ply")
             o3d.io.write_point_cloud(output_filename, pcd_visible)
-            print(f"    保存可见点云: {output_filename}")
-            continue
-        
-        # 更新射线检测的相机位置参数
-        camera_pos = frame_pose[:3, 3]  # 从变换矩阵正确位置获取相机位置
-        visibility = handle_occlusion_raycasting_all(world_points, camera_pos, mesh, visibility, ray_step=0.5)
-        
-        # 筛选可见点
-        visible_points = world_points[visibility == 1]
-        
-        # 构造点云并保存为 PLY 文件
-        pcd_visible = o3d.geometry.PointCloud()
-        pcd_visible.points = o3d.utility.Vector3dVector(visible_points)
-        output_filename = os.path.join(scene_output_dir, f"frame_{i:04d}_visible.ply")
-        o3d.io.write_point_cloud(output_filename, pcd_visible)
-        print(f"    保存可见点云: {output_filename}")
+            print(f"    保存可见点云 ({len(visible_points)}点): {output_filename}")
+        else:
+            print(f"    警告: 无可见点!")
 
-    # 在读取完mesh和poses后调用
-    visualization_path = os.path.join(scene_output_dir, "cameras_and_model.ply")
-    vis_geometries = visualize_cameras_and_model(mesh, poses[:10], visualization_path)
-    print(f"相机和模型可视化已保存到: {visualization_path}")
+def determine_view_from_depth_pcd(depth_pcd, camera_position):
+    """
+    从深度图重建点云确定观察方向和范围
+    """
+    # 1. 计算点云中心
+    center = depth_pcd.get_center()
     
-    # 添加: 删除中间文件，只保留最终可见点云
-    print("删除中间文件，只保留最终可见点云...")
-    # 删除projection_only文件
-    projection_files = glob(os.path.join(scene_output_dir, "*_projection_only.ply"))
-    for file in projection_files:
-        try:
-            os.remove(file)
-            print(f"  已删除: {os.path.basename(file)}")
-        except Exception as e:
-            print(f"  无法删除 {file}: {e}")
+    # 2. 计算观察方向（从相机到点云中心的方向）
+    view_direction = center - camera_position
+    view_direction = view_direction / np.linalg.norm(view_direction)
     
-    # 删除cameras_and_model文件
-    cameras_model_file = os.path.join(scene_output_dir, "cameras_and_model.ply")
-    if os.path.exists(cameras_model_file):
-        try:
-            os.remove(cameras_model_file)
-            print(f"  已删除: cameras_and_model.ply")
-        except Exception as e:
-            print(f"  无法删除 cameras_and_model.ply: {e}")
+    # 3. 计算观察范围（点云到相机的最大距离）
+    points = np.asarray(depth_pcd.points)
+    distances = np.linalg.norm(points - camera_position, axis=1)
+    view_range = np.max(distances)
+    
+    # 打印调试信息
+    print(f"点云中心: {center}")
+    print(f"相机位置: {camera_position}")
+    print(f"观察方向: {view_direction}")
+    print(f"观察范围: {view_range}")
+    
+    return view_direction, view_range
+
+def filter_points_by_view_direction(points, camera_position, view_direction, view_range):
+    """
+    基于观察方向进行初步筛选
+    """
+    visibility = np.zeros(len(points))
+    
+    # 1. 计算所有点到相机的方向向量
+    directions = points - camera_position
+    distances = np.linalg.norm(directions, axis=1)
+    
+    # 2. 归一化方向向量
+    directions = directions / distances[:, np.newaxis]
+    
+    # 3. 计算与观察方向的夹角
+    cos_angles = np.dot(directions, view_direction)
+    
+    # 4. 设置筛选条件
+    angle_threshold = np.cos(np.radians(60))  # 60度视锥角
+    distance_threshold = view_range * 1.2  # 允许20%的额外范围
+    
+    # 5. 应用筛选条件
+    valid_indices = (cos_angles > angle_threshold) & (distances < distance_threshold)
+    visibility[valid_indices] = 1
+    
+    return visibility
+
+def raycast_with_view_guidance(points, camera_position, mesh, initial_visibility,
+                             view_direction, view_range):
+    """
+    基于观察方向进行射线追踪
+    """
+    # 1. 创建射线追踪场景
+    scene = o3d.t.geometry.RaycastingScene()
+    mesh_t = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
+    scene.add_triangles(mesh_t)
+    
+    # 2. 获取初步可见的点
+    visible_indices = np.where(initial_visibility == 1)[0]
+    if len(visible_indices) == 0:
+        return initial_visibility
+    
+    # 3. 准备射线
+    rays = np.zeros((len(visible_indices), 6))
+    rays[:, 0:3] = camera_position
+    
+    # 4. 计算射线方向（考虑观察方向）
+    ray_dirs = points[visible_indices] - camera_position
+    ray_lens = np.linalg.norm(ray_dirs, axis=1, keepdims=True)
+    ray_dirs = ray_dirs / ray_lens
+    
+    # 5. 根据观察方向调整射线
+    for i, ray_dir in enumerate(ray_dirs):
+        # 计算与观察方向的夹角
+        cos_angle = np.dot(ray_dir, view_direction)
+        if cos_angle < 0:  # 如果射线方向与观察方向相反
+            ray_dirs[i] = -ray_dirs[i]  # 翻转射线方向
+    
+    rays[:, 3:6] = ray_dirs
+    
+    # 6. 执行射线追踪
+    rays_t = o3d.core.Tensor(rays, dtype=o3d.core.Dtype.Float32)
+    ans = scene.cast_rays(rays_t)
+    t_hit = ans['t_hit'].numpy()
+    
+    # 7. 更新可见性
+    updated_visibility = initial_visibility.copy()
+    for i, (idx, t, ray_len) in enumerate(zip(visible_indices, t_hit, ray_lens.flatten())):
+        if abs(t - ray_len) > 0.5:  # 射线检测阈值
+            updated_visibility[idx] = 0
+    
+    return updated_visibility
 
 def main():
     parser = argparse.ArgumentParser(description="生成每一帧深度图对应的可见点云，处理所有场景")
-    parser.add_argument("--input", type=str, required=True, help="C3VD 文件夹路径，每个子文件夹表示一个场景")
+    parser.add_argument("--input", type=str, required=True, help="C3VD 文件夹路径，每个子文件夹表示一个场景，包含.obj和pose.txt")
+    parser.add_argument("--point_cloud_source", type=str, required=True, help="C3VD_ply_source 文件夹路径，包含所有场景的点云文件")
     parser.add_argument("--output", type=str, required=True, help="可见点云输出根目录")
     args = parser.parse_args()
     
     input_root = args.input
+    point_cloud_source = args.point_cloud_source
     output_root = args.output
-    
-    # 定义相机内参和畸变系数（参见 creat_check_pcd.py）
-    intrinsic_params = (767.3861511125845, 767.5058656118406, 679.054265997005, 543.646891684636)
-    distortion_params = (-0.18867185058223412, -0.003927337093919806, 0.030524814153620117, -0.012756926010904904)
     
     # 获取输入目录下的所有场景文件夹
     scene_dirs = [os.path.join(input_root, d) for d in os.listdir(input_root) if os.path.isdir(os.path.join(input_root, d))]
@@ -297,7 +304,14 @@ def main():
         return
     
     for scene_path in scene_dirs:
-        process_scene(scene_path, output_root, intrinsic_params, distortion_params)
+        scene_name = os.path.basename(scene_path)
+        # 确保点云源目录中存在对应的场景文件夹
+        point_cloud_scene_dir = os.path.join(point_cloud_source, scene_name)
+        if not os.path.exists(point_cloud_scene_dir):
+            print(f"警告：在点云源目录中未找到场景 {scene_name} 的文件夹，跳过处理。")
+            continue
+            
+        process_scene_with_depth_guided_raycasting(scene_path, point_cloud_scene_dir, output_root)
     
     print("所有场景的可见点云生成任务已完成！")
 
