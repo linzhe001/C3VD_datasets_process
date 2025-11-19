@@ -10,55 +10,55 @@
 #$ -wd /SAN/medic/MRpcr
 
 
-# 点云数据集异常检测工具 - Bash脚本
-# 此脚本用于执行c3vd_outlier_checker.py
+# Point Cloud Dataset Anomaly Detection Tool - Bash Script
+# This script is used to execute c3vd_outlier_checker.py
 
-# 设置颜色输出
+# Set color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # 无颜色
+NC='\033[0m' # No color
 
-# 显示使用说明
+# Display usage instructions
 function show_usage {
-    echo -e "${BLUE}点云数据集异常检测工具${NC}"
-    echo "用法: $0 [选项]"
+    echo -e "${BLUE}Point Cloud Dataset Anomaly Detection Tool${NC}"
+    echo "Usage: $0 [options]"
     echo ""
-    echo "选项:"
-    echo "  -m, --main-folder PATH   主文件夹路径 (默认: /SAN/medic/MRpcr/C3VD_datasets)"
-    echo "  -r, --ref-folder PATH    参考点云文件夹路径 (默认: /SAN/medic/MRpcr/C3VD_datasets/C3VD_ply_rot_scale_trans)"
-    echo "  -s, --src-folder PATH    源点云文件夹路径 (默认: /SAN/medic/MRpcr/C3VD_datasets/visible_point_cloud_ply)"
-    echo "  -o, --output PATH        输出文件路径 (默认: /SAN/medic/MRpcr/result/c3vd_outlier_checker/点云异常报告.txt)"
-    echo "  -h, --help               显示此帮助信息"
+    echo "Options:"
+    echo "  -m, --main-folder PATH   Main folder path (default: /SAN/medic/MRpcr/C3VD_datasets)"
+    echo "  -r, --ref-folder PATH    Reference point cloud folder path (default: /SAN/medic/MRpcr/C3VD_datasets/C3VD_ply_rot_scale_trans)"
+    echo "  -s, --src-folder PATH    Source point cloud folder path (default: /SAN/medic/MRpcr/C3VD_datasets/visible_point_cloud_ply)"
+    echo "  -o, --output PATH        Output file path (default: /SAN/medic/MRpcr/result/c3vd_outlier_checker/outlier_report.txt)"
+    echo "  -h, --help               Display this help information"
     echo ""
 }
 
-# 检查文件夹路径
+# Check folder paths
 check_folders() {
     if [ ! -d "$MAIN_FOLDER" ]; then
-        echo -e "${YELLOW}警告: 主文件夹不存在: $MAIN_FOLDER${NC}"
+        echo -e "${YELLOW}Warning: Main folder does not exist: $MAIN_FOLDER${NC}"
     fi
-    
+
     if [ ! -d "$REF_FOLDER" ]; then
-        echo -e "${YELLOW}警告: 参考点云文件夹不存在: $REF_FOLDER${NC}"
+        echo -e "${YELLOW}Warning: Reference point cloud folder does not exist: $REF_FOLDER${NC}"
     fi
-    
+
     if [ ! -d "$SRC_FOLDER" ]; then
-        echo -e "${YELLOW}警告: 源点云文件夹不存在: $SRC_FOLDER${NC}"
+        echo -e "${YELLOW}Warning: Source point cloud folder does not exist: $SRC_FOLDER${NC}"
     fi
 }
 
-# 预设的数据路径
+# Preset data paths
 MAIN_FOLDER="/SAN/medic/MRpcr/C3VD_datasets"
-REF_FOLDER="/SAN/medic/MRpcr/C3VD_datasets/C3VD_ref"
-SRC_FOLDER="/SAN/medic/MRpcr/C3VD_datasets/C3VD_ply_rot_scale_trans"
+REF_FOLDER="/SAN/medic/MRpcr/C3VD_datasets/C3VD_Raycasting10K_target"
+SRC_FOLDER="/SAN/medic/MRpcr/C3VD_datasets/C3VD_Raycasting10K_source"
 OUTPUT_FILE="/SAN/medic/MRpcr/result/c3vd_outlier_checker/outlier_checker_report.txt"
 
-# 确保输出目录存在
+# Ensure output directory exists
 OUTPUT_DIR=$(dirname "$OUTPUT_FILE")
 
-# 解析命令行参数
+# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     key="$1"
     
@@ -85,58 +85,58 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            echo -e "${RED}错误: 未知选项 $1${NC}"
+            echo -e "${RED}Error: Unknown option $1${NC}"
             show_usage
             exit 1
             ;;
     esac
 done
 
-# 主程序
-echo -e "${BLUE}===== 点云数据集异常检测工具 =====${NC}"
+# Main program
+echo -e "${BLUE}===== Point Cloud Dataset Anomaly Detection Tool =====${NC}"
 
-# 激活Conda环境
+# Activate Conda environment
 source /SAN/medic/MRpcr/miniconda3/etc/profile.d/conda.sh
 conda activate pcd
 
-# 检查文件夹
+# Check folders
 check_folders
 
-# 创建输出目录（如果不存在）
+# Create output directory (if it doesn't exist)
 mkdir -p "$OUTPUT_DIR"
 
-# 显示将要处理的内容
-echo -e "${BLUE}开始处理:${NC}"
-echo -e "  主文件夹: ${GREEN}$MAIN_FOLDER${NC}"
-echo -e "  参考点云文件夹: ${GREEN}$REF_FOLDER${NC}"
-echo -e "  源点云文件夹: ${GREEN}$SRC_FOLDER${NC}"
-echo -e "  输出文件: ${GREEN}$OUTPUT_FILE${NC}"
+# Display what will be processed
+echo -e "${BLUE}Starting processing:${NC}"
+echo -e "  Main folder: ${GREEN}$MAIN_FOLDER${NC}"
+echo -e "  Reference point cloud folder: ${GREEN}$REF_FOLDER${NC}"
+echo -e "  Source point cloud folder: ${GREEN}$SRC_FOLDER${NC}"
+echo -e "  Output file: ${GREEN}$OUTPUT_FILE${NC}"
 echo ""
 
-# 运行Python脚本
-echo -e "${BLUE}执行点云异常检测...${NC}"
+# Run Python script
+echo -e "${BLUE}Executing point cloud anomaly detection...${NC}"
 python3 /SAN/medic/MRpcr/C3VD_datasets_process/c3vd_outlier_checker.py \
     --main_folder "$MAIN_FOLDER" \
     --ref_folder "$REF_FOLDER" \
     --src_folder "$SRC_FOLDER" \
     --output "$OUTPUT_FILE"
 
-# 检查Python脚本执行结果
+# Check Python script execution result
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}点云异常检测已完成!${NC}"
-    echo -e "结果保存在: ${GREEN}$OUTPUT_FILE${NC}"
-    
-    # 如果存在异常报告，显示其内容
+    echo -e "${GREEN}Point cloud anomaly detection completed!${NC}"
+    echo -e "Results saved to: ${GREEN}$OUTPUT_FILE${NC}"
+
+    # If anomaly report exists, display its contents
     if [ -f "$OUTPUT_FILE" ]; then
-        echo -e "${BLUE}异常报告内容:${NC}"
+        echo -e "${BLUE}Anomaly report contents:${NC}"
         echo "----------------------------------------"
         cat "$OUTPUT_FILE"
         echo "----------------------------------------"
     fi
-    
-    echo -e "${GREEN}检测完成。${NC}"
+
+    echo -e "${GREEN}Detection completed.${NC}"
 else
-    echo -e "${RED}执行过程中发生错误!${NC}"
+    echo -e "${RED}Error occurred during execution!${NC}"
     exit 1
 fi
 
